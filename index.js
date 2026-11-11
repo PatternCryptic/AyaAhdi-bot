@@ -7,7 +7,6 @@ const P = require('pino');
 
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const sheetRange = process.env.SHEETS_RANGE || 'Página1!A:H';
-const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || './credentials.json';
 const allowedGroups = (process.env.ALLOWED_GROUP_JIDS || '')
   .split(',')
   .map((jid) => jid.trim())
@@ -16,12 +15,10 @@ const allowedGroups = (process.env.ALLOWED_GROUP_JIDS || '')
 if (!spreadsheetId) {
   throw new Error('Configure SPREADSHEET_ID no ambiente antes de iniciar.');
 }
-if (!fs.existsSync(credentialsPath)) {
-  throw new Error('Arquivo de credenciais não encontrado. Configure GOOGLE_APPLICATION_CREDENTIALS.');
-}
 
+// ADC uses the VM's attached service account on Compute Engine.
+// No downloaded service-account private key is needed.
 const auth = new google.auth.GoogleAuth({
-  keyFile: credentialsPath,
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
 });
 const sheets = google.sheets({ version: 'v4', auth });

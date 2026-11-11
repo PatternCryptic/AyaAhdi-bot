@@ -52,3 +52,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Mensagens pendentes e cópias locais do código
+pending-alignment.jsonl
+index.js.before-*

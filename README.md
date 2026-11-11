@@ -17,16 +17,22 @@ A aba configurada recebe uma linha por mensagem, com as colunas A:H:
 
 O bot não tenta inferir equipamento, lado, posição ou resultado. Esses detalhes continuam preservados no texto original para análise manual. Uma mensagem sem medida explícita deixa essa coluna vazia. A palavra é reconhecida sem diferenciar maiúsculas/minúsculas.
 
-## Configuração
+## Autenticação Google sem chave privada
 
-Requisitos: Node.js 18 ou superior, um projeto Google Cloud com Google Sheets API ativada, uma conta de serviço e a planilha compartilhada com o e-mail dessa conta.
+O código usa Application Default Credentials (ADC). Em produção, execute-o em uma VM do Compute Engine e anexe a conta de serviço `bot-whatsapp-sheets` à VM. O Google fornece credenciais temporárias pelo servidor de metadados; não é necessário criar ou baixar uma chave privada JSON.
 
-1. Instale as dependências: `npm install`.
-2. Copie `.env.example` para `.env` e configure `SPREADSHEET_ID` e `SHEETS_RANGE`.
-3. Baixe a chave JSON da sua própria conta de serviço e coloque-a localmente como `credentials.json` (ou configure outro caminho em `GOOGLE_APPLICATION_CREDENTIALS`). Esse arquivo é ignorado pelo Git. Nunca o envie ao repositório nem cole em mensagens.
-4. Na planilha, prepare a aba configurada com estes cabeçalhos na primeira linha: `Data/hora | Grupo | ID do grupo | Remetente | ID do remetente | Medidas | Mensagem original | ID da mensagem`.
-5. Opcionalmente, preencha `ALLOWED_GROUP_JIDS` com o identificador do grupo permitido. Se vazio, qualquer grupo em que a conta conectada esteja e que contenha a palavra será considerado.
-6. Inicie com `npm start` e escaneie o QR Code com o WhatsApp que participa do grupo.
+A conta de serviço precisa ter acesso de Editor à planilha e a VM deve usar o escopo `cloud-platform`. Mantenha a restrição de criação de chaves da organização ativada.
+
+## Configuração do bot
+
+1. Na VM, instale Node.js 18+ e as dependências com `npm install`.
+2. Configure as variáveis de ambiente do `.env.example` por meio do arquivo de ambiente do serviço (por exemplo, `EnvironmentFile` do systemd).
+3. Na aba `Página1`, prepare estes cabeçalhos na primeira linha: `Data/hora | Grupo | ID do grupo | Remetente | ID do remetente | Medidas | Mensagem original | ID da mensagem`.
+4. Inicie com `npm start` e escaneie o QR Code com o WhatsApp que participa do grupo.
+
+## Hospedagem e custos
+
+O Google Cloud Free Tier inclui uma VM e2-micro não preemptiva por mês somente nas regiões elegíveis `us-west1`, `us-central1` ou `us-east1`, além de limites mensais para disco e tráfego de saída. Uso fora desses limites pode gerar cobranças. Confira a página de preços e o painel de faturamento antes de criar a VM.
 
 ## Comportamento e limites da V1
 
@@ -35,8 +41,8 @@ Requisitos: Node.js 18 ou superior, um projeto Google Cloud com Google Sheets AP
 - Ignora mensagens antigas sincronizadas e mensagens enviadas pela própria conta.
 - Guarda os IDs recentes processados em `processed-message-ids.json`, arquivo local ignorado pelo Git.
 - A sessão WhatsApp fica em `auth_info_baileys/`, também ignorada pelo Git.
-- Para evitar duplicidade quando o processo reiniciar, o arquivo local de IDs deve ser mantido junto da hospedagem.
+- Para evitar duplicidade quando o processo reiniciar, mantenha os dados locais junto da hospedagem.
 
 ## Segurança
 
-Chaves de serviço e sessão do WhatsApp são segredos. Use somente credenciais da sua própria conta de serviço. Se uma chave antiga de terceiros foi publicada no repositório, removê-la do branch atual não invalida cópias nem o histórico do Git; o proprietário dessa chave precisa revogá-la no Google Cloud.
+Não crie nem publique chaves privadas de contas de serviço. Use uma conta de serviço com acesso mínimo, anexada somente à VM do bot.

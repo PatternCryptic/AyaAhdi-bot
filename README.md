@@ -1,137 +1,42 @@
-# 🤖 Bot WhatsApp École IGA : Automatisation & Inscription des Étudiants
+# Coletor de alinhamentos via WhatsApp
 
-[![Node.js](https://img.shields.io/badge/Node.js-16+-6DA55F.svg?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![WhatsApp](https://img.shields.io/badge/WhatsApp-Baileys-25D366.svg?style=for-the-badge&logo=whatsapp&logoColor=white)](https://github.com/WhiskeySockets/Baileys)
-[![Google Sheets API](https://img.shields.io/badge/Google%20Sheets-API-34A853.svg?style=for-the-badge&logo=google-sheets&logoColor=white)](https://developers.google.com/sheets/api)
+Bot silencioso para registrar no Google Sheets somente mensagens de grupos que contenham a palavra **alinhamento**. Esta V1 guarda a mensagem encontrada, sem responder e sem associar mensagens enviadas depois.
 
-Bienvenue sur la documentation officielle du **Bot WhatsApp École IGA**, une solution complète d'automatisation développée pour collecter de manière fluide les informations des étudiants via WhatsApp et les synchroniser en temps réel dans Google Sheets. Le projet intègre également un générateur automatique de QR Codes pour faciliter l'accès à la conversation.
+## O que é registrado
 
----
+A aba configurada recebe uma linha por mensagem, com as colunas A:H:
 
-## 🎯 Objectifs du Projet
+1. Data/hora da mensagem (UTC)
+2. Nome do grupo
+3. Identificador do grupo
+4. Nome exibido do remetente
+5. Identificador do remetente
+6. Medidas escritas explicitamente com unidade (por exemplo, `6 mm`)
+7. Mensagem original completa
+8. Identificador da mensagem (deduplicação)
 
-- **Automatiser la collecte** d'informations d'inscription des étudiants.
-- **Intégrer WhatsApp** comme interface utilisateur principale.
-- **Stocker les données** dans Google Sheets en temps réel.
-- **Fournir une interface** simple et intuitive en français.
-- **Permettre la génération** de QR Codes pour un accès rapide.
+O bot não tenta inferir equipamento, lado, posição ou resultado. Esses detalhes continuam preservados no texto original para análise manual. Uma mensagem sem medida explícita deixa essa coluna vazia. A palavra é reconhecida sem diferenciar maiúsculas/minúsculas.
 
----
+## Configuração
 
-## 🛠️ Technologies Utilisées
+Requisitos: Node.js 18 ou superior, um projeto Google Cloud com Google Sheets API ativada, uma conta de serviço e a planilha compartilhada com o e-mail dessa conta.
 
-- **Node.js** — Runtime JavaScript côté serveur.
-- **@whiskeysockets/baileys** — Librairie WhatsApp Web API pour la gestion des sessions et messages.
-- **Google Sheets API** — API cloud pour la persistance et le stockage des données.
-- **QRCode** — Module de génération dynamique de codes QR d'accès.
-- **Pino** — Système de logging haute performance pour le suivi des événements.
+1. Instale as dependências: `npm install`.
+2. Copie `.env.example` para `.env` e configure `SPREADSHEET_ID` e `SHEETS_RANGE`.
+3. Baixe a chave JSON da sua própria conta de serviço e coloque-a localmente como `credentials.json` (ou configure outro caminho em `GOOGLE_APPLICATION_CREDENTIALS`). Esse arquivo é ignorado pelo Git. Nunca o envie ao repositório nem cole em mensagens.
+4. Na planilha, prepare a aba configurada com estes cabeçalhos na primeira linha: `Data/hora | Grupo | ID do grupo | Remetente | ID do remetente | Medidas | Mensagem original | ID da mensagem`.
+5. Opcionalmente, preencha `ALLOWED_GROUP_JIDS` com o identificador do grupo permitido. Se vazio, qualquer grupo em que a conta conectada esteja e que contenha a palavra será considerado.
+6. Inicie com `npm start` e escaneie o QR Code com o WhatsApp que participa do grupo.
 
----
+## Comportamento e limites da V1
 
-## 🌟 Fonctionnalités Principales
+- Processa somente mensagens novas recebidas de grupos, com a palavra inteira `alinhamento`.
+- Não lê mensagens seguintes como continuação, não responde nem envia comandos.
+- Ignora mensagens antigas sincronizadas e mensagens enviadas pela própria conta.
+- Guarda os IDs recentes processados em `processed-message-ids.json`, arquivo local ignorado pelo Git.
+- A sessão WhatsApp fica em `auth_info_baileys/`, também ignorada pelo Git.
+- Para evitar duplicidade quando o processo reiniciar, o arquivo local de IDs deve ser mantido junto da hospedagem.
 
-- **Processus d'Inscription Interactif** : Menu étape par étape pour guider l'étudiant avec validation automatique des données saisies.
-- **Stockage Google Sheets en Temps Réel** : Synchronisation directe des informations collectées dans une feuille de calcul sécurisée.
-- **Générateur de QR Codes Intégré** : Création automatique de visuels QR Code pour un accès rapide au bot.
-- **Commandes Utiles** :
-  - `*` : Retour rapide au menu principal.
-  - `0` : Quitter la conversation à tout moment.
+## Segurança
 
----
-
-## 🛠️ Installation & Démarrage Rapide
-
-### 1. Prérequis
-Assurez-vous d'avoir installé **Node.js** (v16 ou supérieure) et **npm** :
-
-```powershell
-node --version
-npm --version
-```
-
-### 2. Installation des Dépendances
-Dans le répertoire racine du projet :
-
-```powershell
-npm install
-```
-
-### 3. Configuration Google Cloud & Sheets API
-1. Rendez-vous sur la [Google Cloud Console](https://console.cloud.google.com/).
-2. Créez un projet nommé `"IGA-WhatsApp-Bot"` et activez l'**API Google Sheets**.
-3. Dans **APIs & Services > Credentials**, créez un **Compte de Service (Service Account)** et téléchargez la clé au format JSON.
-4. Renommez le fichier téléchargé en `credentials.json` à la racine.
-5. Partagez votre Google Sheet avec l'adresse e-mail du Compte de Service et collez l'ID de la feuille dans `config.json`.
-
-### 4. Lancement du Bot
-
-```powershell
-node index.js
-```
-
----
-
-## 📲 Générateur de QR Codes
-
-Pour générer un nouveau QR Code d'accès rapide au bot :
-
-```powershell
-cd qr-generator
-node simple-qr.js
-```
-
-*Le visuel généré sera enregistré dans `qr-generator/output/qr-principal.png`.*
-
----
-
-## 📁 Structure du Projet
-
-```text
-Bot/
-├── auth_info_baileys/             # Données de session temporaires WhatsApp
-├── qr-generator/                  # Module autonome de génération de QR Code
-│   ├── output/
-│   │   └── qr-principal.png       # QR Code principal généré
-│   ├── README.md                  # Documentation du générateur QR
-│   └── simple-qr.js               # Script de génération QR
-├── .gitignore                     # Protection des fichiers sensibles et jetons
-├── config.json                    # Configuration du bot & ID Google Sheets
-├── credentials.example.json       # Structure d'exemple pour les identifiants
-├── credentials.json               # Clés privées Google API (compte de service)
-├── disabled_users.json            # Liste des utilisateurs désactivés
-├── index.js                       # Point d'entrée principal de l'application
-├── messages-responsable.json      # Messages stockés pour la gestion administrative
-├── package.json                   # Gestionnaire des dépendances Node.js
-├── GITHUB-SETUP.md                # Guide de publication GitHub
-├── QUICK-START.md                 # Guide de prise en main rapide
-├── README.md                      # Présentation principale du projet
-└── SUPPORT.md                     # Documentation de support et dépannage
-```
-
----
-
-## 🔒 Sécurité & Dépannage
-
-### Gestion des Fichiers Sensibles
-- ⚠️ **Attention** : N'envoyez jamais vos fichiers `credentials.json`, `auth_info_baileys/` et `messages-responsable.json` sur un dépôt public.
-- Assurez-vous qu'ils soient correctement listés dans votre fichier `.gitignore`.
-
-### Réinitialisation de la Session WhatsApp
-Si le QR Code de connexion ne s'affiche pas dans le terminal :
-
-```powershell
-Remove-Item -Recurse -Force auth_info_baileys
-node index.js
-```
-
----
-
-## 👩‍💻 Auteur & Version
-
-- **Auteur** : **AHDI Aya**
-- **Établissement** : École IGA (Institut Supérieur du Génie Appliqué)
-- **Version** : 1.0.0 (Août 2025)
-
----
-
-*Ce bot a été développé spécifiquement pour l'École IGA dans le but d'automatiser et simplifier le processus d'inscription des étudiants via WhatsApp.*
+Chaves de serviço e sessão do WhatsApp são segredos. Use somente credenciais da sua própria conta de serviço. Se uma chave antiga de terceiros foi publicada no repositório, removê-la do branch atual não invalida cópias nem o histórico do Git; o proprietário dessa chave precisa revogá-la no Google Cloud.

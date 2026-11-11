@@ -1,48 +1,40 @@
 # Coletor de alinhamentos via WhatsApp
 
-Bot silencioso para registrar no Google Sheets somente mensagens de grupos que contenham a palavra **alinhamento**. Esta V1 guarda a mensagem encontrada, sem responder e sem associar mensagens enviadas depois.
+Bot silencioso que processa mensagens de grupos contendo a palavra inteira **alinhamento** e preenche o histórico na aba `Modelo alinhamento` do Google Sheets.
 
-## O que é registrado
+## Cadastro e mensagem
 
-A aba configurada recebe uma linha por mensagem, com as colunas A:H:
+A equipe cadastra previamente a embarcação na coluna A (Vessel) e o equipamento na coluna B (Equipment Class). A combinação deve identificar uma única linha. O bot só escreve valores explicitamente informados nas colunas E:M e não altera os dados do cadastro nem tolerâncias.
 
-1. Data/hora da mensagem (UTC)
-2. Nome do grupo
-3. Identificador do grupo
-4. Nome exibido do remetente
-5. Identificador do remetente
-6. Medidas escritas explicitamente com unidade (por exemplo, `6 mm`)
-7. Mensagem original completa
-8. Identificador da mensagem (deduplicação)
+Exemplo de mensagem:
 
-O bot não tenta inferir equipamento, lado, posição ou resultado. Esses detalhes continuam preservados no texto original para análise manual. Uma mensagem sem medida explícita deixa essa coluna vazia. A palavra é reconhecida sem diferenciar maiúsculas/minúsculas.
+```text
+ALINHAMENTO
+Embarcação: BRAM BAHIA
+Equipamento: Main Propulsion Elect. Motor No.1
+Data: 11/11/2026
+Motivação: manutenção
+Executor: equipe de manutenção
+Método: laser
+Axial vertical: -0,03 mm
+Axial horizontal: 0,02 mm
+Radial vertical: 0,13 mm
+Radial horizontal: 0,00 mm
+Coupling GAP: 189,46 mm
+```
 
-## Autenticação Google sem chave privada
+Use apenas os campos conhecidos. Cada campo deve começar em uma linha e ter um rótulo seguido de dois pontos. Embarcação e equipamento devem corresponder ao cadastro; a comparação ignora diferenças de maiúsculas, acentos e espaços repetidos. O bot não interpreta texto livre, não infere dados e não avalia tolerâncias.
 
-O código usa Application Default Credentials (ADC). Em produção, execute-o em uma VM do Compute Engine e anexe a conta de serviço `bot-whatsapp-sheets` à VM. O Google fornece credenciais temporárias pelo servidor de metadados; não é necessário criar ou baixar uma chave privada JSON.
+Se não houver uma única linha correspondente, se algum campo solicitado já estiver preenchido ou se a API falhar, a mensagem fica em `pending-alignment.jsonl` na VM, para análise manual. Pendências não são reprocessadas automaticamente. O bot não responde no WhatsApp. O arquivo contém mensagens e deve ser protegido e mantido fora do Git. O controle de campos preenchidos consulta a planilha antes da escrita; alterações simultâneas por outras pessoas durante essa operação podem gerar conflito.
 
-A conta de serviço precisa ter acesso de Editor à planilha e a VM deve usar o escopo `cloud-platform`. Mantenha a restrição de criação de chaves da organização ativada.
+## Google Cloud e execução
 
-## Configuração do bot
+Use Node.js 18 ou superior, instale as dependências com `npm install` e configure `SPREADSHEET_ID` no ambiente do serviço. A aba precisa chamar-se `Modelo alinhamento`, com duas linhas de cabeçalho e os cadastros a partir da linha 3; o bot consulta até a linha 1000.
 
-1. Na VM, instale Node.js 18+ e as dependências com `npm install`.
-2. Configure as variáveis de ambiente do `.env.example` por meio do arquivo de ambiente do serviço (por exemplo, `EnvironmentFile` do systemd).
-3. Na aba `Página1`, prepare estes cabeçalhos na primeira linha: `Data/hora | Grupo | ID do grupo | Remetente | ID do remetente | Medidas | Mensagem original | ID da mensagem`.
-4. Inicie com `npm start` e escaneie o QR Code com o WhatsApp que participa do grupo.
+Anexe à VM uma conta de serviço com acesso de Editor à planilha. Use Application Default Credentials, sem chave privada JSON. A VM precisa do escopo OAuth `https://www.googleapis.com/auth/spreadsheets`; se também precisar das APIs do Cloud, mantenha `https://www.googleapis.com/auth/cloud-platform` junto. Ative a API Google Sheets no projeto.
 
-## Hospedagem e custos
+Inicie `npm start` e vincule o WhatsApp pelo QR Code. A sessão fica em `auth_info_baileys/` e os IDs processados em `processed-message-ids.json`; não compartilhe esses arquivos. `ALLOWED_GROUP_JIDS` é opcional: vazio permite mensagens de todos os grupos da conta conectada. O bot ignora mensagens antigas sincronizadas e mensagens enviadas pela própria conta.
 
-O Google Cloud Free Tier inclui uma VM e2-micro não preemptiva por mês somente nas regiões elegíveis `us-west1`, `us-central1` ou `us-east1`, além de limites mensais para disco e tráfego de saída. Uso fora desses limites pode gerar cobranças. Confira a página de preços e o painel de faturamento antes de criar a VM.
+## Limites
 
-## Comportamento e limites da V1
-
-- Processa somente mensagens novas recebidas de grupos, com a palavra inteira `alinhamento`.
-- Não lê mensagens seguintes como continuação, não responde nem envia comandos.
-- Ignora mensagens antigas sincronizadas e mensagens enviadas pela própria conta.
-- Guarda os IDs recentes processados em `processed-message-ids.json`, arquivo local ignorado pelo Git.
-- A sessão WhatsApp fica em `auth_info_baileys/`, também ignorada pelo Git.
-- Para evitar duplicidade quando o processo reiniciar, mantenha os dados locais junto da hospedagem.
-
-## Segurança
-
-Não crie nem publique chaves privadas de contas de serviço. Use uma conta de serviço com acesso mínimo, anexada somente à VM do bot.
+O processamento do histórico foi verificado com testes locais de identificação de linha e mapeamento. O teste completo com uma linha real cadastrada e mensagem de grupo ainda precisa ser realizado. A hospedagem deve preservar os arquivos locais e ser monitorada para operação contínua.

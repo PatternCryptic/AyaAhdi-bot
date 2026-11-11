@@ -78,24 +78,18 @@ async function appendAlignment(sock, msg, text) {
   }
   const messageId = msg.key.id || '';
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: sheetRange,
-    valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    resource: {
-      values: [[
-        timestamp,
-        groupName,
-        groupJid,
-        msg.pushName || '',
-        senderJid,
-        findMeasurements(text),
-        text,
-        messageId
-      ]]
-    }
+  const client = await auth.getClient();
+  const accessToken = await client.getAccessToken();
+  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId) + '/values/' + encodeURIComponent(sheetRange) + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + accessToken.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [[timestamp, groupName, groupJid, msg.pushName || '', senderJid, findMeasurements(text), text, messageId]] })
   });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error('Sheets HTTP ' + response.status + ': ' + body.slice(0, 300));
+  }
 }
 
 async function handleMessage(sock, msg) {
@@ -109,7 +103,16 @@ async function handleMessage(sock, msg) {
   const messageId = msg.key.id;
   if (messageId && seenIds.has(messageId)) return;
 
-  await appendAlignment(sock, msg, text);
+  let result;
+  try {
+    result = await require('./alignment_history').recordHistory(auth, spreadsheetId, text);
+  } catch (error) {
+    result = 'pendente: ' + error.message;
+  }
+  if (result.startsWith('pendente:')) {
+    fs.appendFileSync(path.join(__dirname, 'pending-alignment.jsonl'), JSON.stringify({ messageId, groupJid, text, reason: result }) + '\n', { mode: 0o600 });
+  }
+  console.log('Histórico de alinhamento:', result);
   if (messageId) {
     seenIds.add(messageId);
     saveSeenIds();

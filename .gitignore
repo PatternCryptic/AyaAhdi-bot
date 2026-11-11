@@ -1,10 +1,16 @@
-# Repository Privé - Configuration sécurisée
-# credentials.json est inclus (repository privé)
+# Credenciais e configuração local (nunca versionar)
+credentials.json
+*.service-account.json
+.env
+.env.*
+!.env.example
 
-# Données temporaires et session
+# Sessão WhatsApp e dados locais
 auth_info_baileys/
+processed-message-ids.json
 feedbacks.json
 messages-responsable.json
+disabled_users.json
 
 # Node.js
 node_modules/
@@ -23,16 +29,9 @@ pids
 *.seed
 *.pid.lock
 
-# QR Codes générés (optionnel - gardez seulement le principal)
+# QR Codes gerados
 qr-generator/output/*.png
 !qr-generator/output/.gitkeep
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # IDE
 .vscode/

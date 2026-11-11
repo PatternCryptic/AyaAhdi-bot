@@ -1,112 +1,51 @@
-# 🚀 Guide Démarrage Rapide - Bot WhatsApp IGA
+# Início rápido — Coletor de alinhamentos
 
-## ⚡ Installation Express (5 minutes)
+## 1. Requisitos
 
-### 1. Cloner le projet
+- Node.js 18 ou superior.
+- Google Sheets API ativada no projeto Google Cloud.
+- Uma conta de serviço criada no seu projeto e compartilhada na planilha com permissão de Editor.
 
-```bash
-git clone https://github.com/VOTRE-USERNAME/iga-whatsapp-bot.git
-cd iga-whatsapp-bot
-```
-
-### 2. Installer les dépendances
+## 2. Preparar o projeto
 
 ```bash
 npm install
+cp .env.example .env
 ```
 
-### 3. Configuration Google Sheets (OBLIGATOIRE)
+No Windows, copie `.env.example` para `.env` pelo Explorador de Arquivos ou PowerShell.
 
-#### A. Créer le projet Google Cloud
+Edite `.env`:
 
-1. Aller sur [Google Cloud Console](https://console.cloud.google.com/)
-2. Créer un nouveau projet
-3. Activer l'API Google Sheets
-
-#### B. Créer les credentials
-
-1. Créer un Service Account
-2. Télécharger le fichier JSON
-3. Renommer en `credentials.json` et placer dans le dossier racine
-
-#### C. Préparer le Google Sheet
-
-1. Créer un nouveau Google Sheets
-2. Ajouter les en-têtes : `Nom | Prénom | Email | Téléphone | Programme | Date | Ville | Niveau | Commentaires`
-3. Partager avec l'email du service account
-4. Copier l'ID du spreadsheet et l'ajouter dans `config.json`
-
-### 4. Configurer le bot
-
-Modifier `config.json` :
-
-```json
-{
-  "googleSheets": {
-    "spreadsheetId": "VOTRE_SPREADSHEET_ID",
-    "range": "A:I"
-  },
-  "bot": {
-    "welcomeMessage": "👋 Bienvenue chez l'École IGA !",
-    "adminPhone": "VOTRE_NUMERO_ADMIN"
-  }
-}
+```env
+SPREADSHEET_ID=ID_DA_SUA_PLANILHA
+GOOGLE_APPLICATION_CREDENTIALS=./credentials.json
+SHEETS_RANGE=Página1!A:H
+ALLOWED_GROUP_JIDS=
 ```
 
-### 5. Lancer le bot
+Coloque localmente o JSON da chave da sua própria conta de serviço no caminho configurado. O arquivo `credentials.json` é ignorado pelo Git; não o publique.
+
+Na aba `Página1`, use estes cabeçalhos na primeira linha:
+
+`Data/hora | Grupo | ID do grupo | Remetente | ID do remetente | Medidas | Mensagem original | ID da mensagem`
+
+## 3. Conectar o WhatsApp
 
 ```bash
-node index.js
+npm start
 ```
 
-### 6. Connecter WhatsApp
+Escaneie o QR Code com a conta de WhatsApp que participa do grupo. O processo fica em escuta sem enviar respostas.
 
-1. Scanner le QR Code qui s'affiche
-2. Le bot est maintenant actif !
+## 4. Filtro opcional por grupo
 
-## 🔧 Générer un QR Code d'accès
+Se `ALLOWED_GROUP_JIDS` ficar vazio, o bot registra mensagens que contenham a palavra inteira `alinhamento` em qualquer grupo em que a conta conectada esteja.
 
-```bash
-cd qr-generator
-node simple-qr.js
-```
+Para limitar a um grupo, informe seu JID em `ALLOWED_GROUP_JIDS`. As mensagens seguintes só entram se elas mesmas também contiverem “alinhamento”. O bot não associa mensagens de acompanhamento.
 
-Le QR Code sera généré dans `qr-generator/output/`
+## Observações
 
-## 📱 Utilisation
-
-Les utilisateurs peuvent :
-
-1. Scanner le QR Code ou envoyer un message au bot
-2. Suivre le menu interactif
-3. S'inscrire en remplissant le formulaire
-4. Leurs informations sont automatiquement sauvées dans Google Sheets
-
-## 🆘 Problèmes courants
-
-**QR Code ne s'affiche pas :**
-
-```bash
-rm -rf auth_info_baileys
-node index.js
-```
-
-**Erreur Google Sheets :**
-
-- Vérifier l'ID du spreadsheet
-- Confirmer que le service account a les permissions
-
-**Dépendances manquantes :**
-
-```bash
-rm -rf node_modules package-lock.json
-npm install
-```
-
-## 📖 Documentation complète
-
-Consulter le [README.md](README.md) principal pour une documentation détaillée.
-
----
-
-_🎓 École IGA - Solution automatisée d'inscription via WhatsApp_
+- O campo de medidas registra valores explícitos com unidade, como `6 mm`; outros dados permanecem preservados na mensagem original.
+- A sessão WhatsApp é guardada em `auth_info_baileys/`; mantenha essa pasta junto da hospedagem para evitar novo pareamento.
+- Não use credenciais antigas encontradas no repositório. A exclusão do arquivo no branch atual não revoga a chave nem remove cópias do histórico Git; o proprietário deve revogá-la no Google Cloud.

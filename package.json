@@ -1,7 +1,7 @@
 {
-  "name": "iga-whatsapp-bot",
+  "name": "whatsapp-alignment-collector",
   "version": "1.0.0",
-  "description": "Bot WhatsApp pour l'École IGA avec enregistrement Google Sheets",
+  "description": "Coletor silencioso de mensagens de alinhamento para Google Sheets",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -9,12 +9,10 @@
   },
   "keywords": [
     "whatsapp",
-    "bot",
     "google-sheets",
-    "iga",
-    "education"
+    "alignment",
+    "maintenance"
   ],
-  "author": "École IGA",
   "license": "MIT",
   "dependencies": {
     "@adiwajshing/keyed-db": "^0.2.4",

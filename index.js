@@ -67,13 +67,18 @@ function findMeasurements(text) {
     .join('; ');
 }
 
-async function appendAlignment(msg, text) {
+async function appendAlignment(sock, msg, text) {
   const groupJid = msg.key.remoteJid;
   const senderJid = msg.key.participant || '';
   const timestamp = msg.messageTimestamp
     ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
     : new Date().toISOString();
-  const groupName = msg.pushName || '';
+  let groupName = '';
+  try {
+    groupName = (await sock.groupMetadata(groupJid)).subject || '';
+  } catch {
+    // O ID do grupo continua sendo registrado caso os metadados não estejam disponíveis.
+  }
   const messageId = msg.key.id || '';
 
   await sheets.spreadsheets.values.append({
@@ -96,7 +101,7 @@ async function appendAlignment(msg, text) {
   });
 }
 
-async function handleMessage(msg) {
+async function handleMessage(sock, msg) {
   const groupJid = msg.key.remoteJid || '';
   if (!groupJid.endsWith('@g.us') || msg.key.fromMe) return;
   if (allowedGroups.length && !allowedGroups.includes(groupJid)) return;
@@ -107,7 +112,7 @@ async function handleMessage(msg) {
   const messageId = msg.key.id;
   if (messageId && seenIds.has(messageId)) return;
 
-  await appendAlignment(msg, text);
+  await appendAlignment(sock, msg, text);
   if (messageId) {
     seenIds.add(messageId);
     saveSeenIds();
@@ -143,7 +148,7 @@ async function startBot() {
     for (const msg of messages) {
       if (!msg.message) continue;
       try {
-        await handleMessage(msg);
+        await handleMessage(sock, msg);
       } catch (error) {
         console.error('Falha ao registrar mensagem:', error.message);
       }

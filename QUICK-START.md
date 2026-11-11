@@ -1,51 +1,42 @@
 # Início rápido — Coletor de alinhamentos
 
-## 1. Requisitos
+## O caminho que vamos usar
 
-- Node.js 18 ou superior.
-- Google Sheets API ativada no projeto Google Cloud.
-- Uma conta de serviço criada no seu projeto e compartilhada na planilha com permissão de Editor.
+A conta de serviço já existe e foi compartilhada com a planilha. O bot será executado em uma VM do Compute Engine com essa conta anexada. Assim, o Google fornece credenciais temporárias e não precisamos baixar uma chave JSON.
 
-## 2. Preparar o projeto
+## 1. Preparar a planilha
 
-```bash
-npm install
-cp .env.example .env
-```
-
-No Windows, copie `.env.example` para `.env` pelo Explorador de Arquivos ou PowerShell.
-
-Edite `.env`:
-
-```env
-SPREADSHEET_ID=ID_DA_SUA_PLANILHA
-GOOGLE_APPLICATION_CREDENTIALS=./credentials.json
-SHEETS_RANGE=Página1!A:H
-ALLOWED_GROUP_JIDS=
-```
-
-Coloque localmente o JSON da chave da sua própria conta de serviço no caminho configurado. O arquivo `credentials.json` é ignorado pelo Git; não o publique.
-
-Na aba `Página1`, use estes cabeçalhos na primeira linha:
+Na aba configurada, use estes cabeçalhos na primeira linha:
 
 `Data/hora | Grupo | ID do grupo | Remetente | ID do remetente | Medidas | Mensagem original | ID da mensagem`
 
-## 3. Conectar o WhatsApp
+A conta de serviço `bot-whatsapp-sheets` precisa ter acesso de Editor à planilha.
 
-```bash
-npm start
-```
+## 2. Criar a VM (faremos juntos no Console)
 
-Escaneie o QR Code com a conta de WhatsApp que participa do grupo. O processo fica em escuta sem enviar respostas.
+Para tentar permanecer dentro do Free Tier, a documentação do Google lista uma VM e2-micro não preemptiva nas regiões `us-west1`, `us-central1` ou `us-east1`, com limites mensais de disco e tráfego. Não crie em outra região nem adicione recursos pagos sem conferir o custo estimado.
 
-## 4. Filtro opcional por grupo
+Na criação da VM, vamos anexar a conta `bot-whatsapp-sheets` e habilitar o escopo `cloud-platform`. Não alteraremos a política que bloqueia chaves privadas.
 
-Se `ALLOWED_GROUP_JIDS` ficar vazio, o bot registra mensagens que contenham a palavra inteira `alinhamento` em qualquer grupo em que a conta conectada esteja.
+## 3. Instalar e configurar o bot
 
-Para limitar a um grupo, informe seu JID em `ALLOWED_GROUP_JIDS`. As mensagens seguintes só entram se elas mesmas também contiverem “alinhamento”. O bot não associa mensagens de acompanhamento.
+Na VM:
 
-## Observações
+1. Instale Node.js 18+.
+2. Clone o repositório e entre na pasta.
+3. Rode `npm install`.
+4. Configure `SPREADSHEET_ID`, `SHEETS_RANGE` e, se quiser, `ALLOWED_GROUP_JIDS` como variáveis de ambiente do serviço.
+5. Rode `npm start` e escaneie o QR Code com a conta WhatsApp que participa do grupo.
 
-- O campo de medidas registra valores explícitos com unidade, como `6 mm`; outros dados permanecem preservados na mensagem original.
-- A sessão WhatsApp é guardada em `auth_info_baileys/`; mantenha essa pasta junto da hospedagem para evitar novo pareamento.
-- Não use credenciais antigas encontradas no repositório. A exclusão do arquivo no branch atual não revoga a chave nem remove cópias do histórico Git; o proprietário deve revogá-la no Google Cloud.
+O serviço deve ser configurado para iniciar novamente após reinicialização da VM. A sessão WhatsApp fica em `auth_info_baileys/`; mantenha essa pasta no disco persistente.
+
+## O que o bot faz
+
+- Registra somente mensagens novas de grupo que contenham a palavra inteira `alinhamento`.
+- Não responde nem inclui mensagens enviadas depois que não contenham a palavra.
+- Guarda o texto original e medidas que estiverem explicitamente escritas.
+- Não cria chave privada de conta de serviço.
+
+## Custos
+
+O Free Tier tem limites. Disco, tráfego ou configurações fora deles podem gerar cobrança. Antes de criar a VM, confira a estimativa no Console e o painel de faturamento.

@@ -8,6 +8,7 @@ credentials.json
 # Sessão WhatsApp e dados locais
 auth_info_baileys/
 processed-message-ids.json
+alignment-sessions.json
 feedbacks.json
 messages-responsable.json
 disabled_users.json

@@ -19,8 +19,10 @@ if (!spreadsheetId) {
 if (geminiEnabled && !process.env.GEMINI_API_KEY) {
   throw new Error('GEMINI_CONVERSATION_ENABLED requer GEMINI_API_KEY.');
 }
-if (geminiEnabled && !allowedGroups.length) {
-  throw new Error('Configure ALLOWED_GROUP_JIDS antes de habilitar a leitura de conversas pelo Gemini.');
+if (geminiEnabled) {
+  console.log(allowedGroups.length
+    ? `Gemini ativo para ${allowedGroups.length} grupo(s) autorizado(s).`
+    : 'Gemini ativo em todos os grupos dos quais o bot participa; a coleta começa com a palavra "alinhamento".');
 }
 
 // ADC uses the VM's attached service account on Compute Engine.

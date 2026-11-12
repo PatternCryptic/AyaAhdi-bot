@@ -1,48 +1,33 @@
 # Coletor de alinhamentos via WhatsApp
 
-Bot silencioso para registrar no Google Sheets somente mensagens de grupos que contenham a palavra **alinhamento**. Esta V1 guarda a mensagem encontrada, sem responder e sem associar mensagens enviadas depois.
+Bot silencioso que pode coletar mensagens de alinhamento em grupos e preencher somente o histórico da aba `Modelo alinhamento` no Google Sheets.
 
-## O que é registrado
+## Planilha e cadastro
 
-A aba configurada recebe uma linha por mensagem, com as colunas A:H:
+A equipe cadastra previamente a embarcação na coluna A (`Vessel`) e o equipamento na coluna B (`Equipment Class`). A combinação precisa identificar exatamente uma linha. O bot escreve apenas os campos de histórico nas colunas E:M; não altera o cadastro nem tolerâncias.
 
-1. Data/hora da mensagem (UTC)
-2. Nome do grupo
-3. Identificador do grupo
-4. Nome exibido do remetente
-5. Identificador do remetente
-6. Medidas escritas explicitamente com unidade (por exemplo, `6 mm`)
-7. Mensagem original completa
-8. Identificador da mensagem (deduplicação)
+## Modo de conversa contínua com Gemini
 
-O bot não tenta inferir equipamento, lado, posição ou resultado. Esses detalhes continuam preservados no texto original para análise manual. Uma mensagem sem medida explícita deixa essa coluna vazia. A palavra é reconhecida sem diferenciar maiúsculas/minúsculas.
+O recurso é opt-in e fica desligado por padrão. Para ativá-lo, configure `GEMINI_CONVERSATION_ENABLED=true`, `GEMINI_API_KEY`, `GEMINI_MODEL=gemini-3.1-flash-lite` e uma lista explícita de grupos em `ALLOWED_GROUP_JIDS`. O processo recusa iniciar o modo Gemini se a chave ou a lista de grupos estiver ausente.
 
-## Autenticação Google sem chave privada
+Uma mensagem com a palavra inteira `alinhamento` inicia uma sessão naquele grupo. O bot guarda mensagens relacionadas por até 15 minutos de inatividade. O Gemini classifica as mensagens recebidas no grupo enquanto a sessão está ativa e, ao encerrar, tenta extrair um único registro. Se detectar troca clara de equipamento, fecha o registro anterior e abre outro. Mensagens paralelas, ambiguidades e falhas de evidência não são gravadas automaticamente.
 
-O código usa Application Default Credentials (ADC). Em produção, execute-o em uma VM do Compute Engine e anexe a conta de serviço `bot-whatsapp-sheets` à VM. O Google fornece credenciais temporárias pelo servidor de metadados; não é necessário criar ou baixar uma chave privada JSON.
+Ao habilitar o modo, o texto das mensagens do grupo permitido durante a sessão é enviado ao Gemini para classificação, inclusive mensagens que depois sejam consideradas paralelas. Faça os primeiros testes somente com mensagens fictícias e não habilite em grupos corporativos até que o uso desse serviço esteja aprovado pela empresa. As sessões ficam em `alignment-sessions.json` com permissão restrita; itens ambíguos ou falhas ficam em `pending-alignment.jsonl`, também protegidos e fora do Git.
 
-A conta de serviço precisa ter acesso de Editor à planilha e a VM deve usar o escopo `cloud-platform`. Mantenha a restrição de criação de chaves da organização ativada.
+O modelo não pode completar valores ausentes ou mudar unidades. Cada valor extraído precisa corresponder literalmente a uma citação de uma mensagem. A gravação só ocorre quando embarcação, equipamento e ao menos um campo de histórico têm evidência literal e o cadastro da planilha encontra uma linha única. A planilha é consultada antes da gravação; alterações simultâneas por outra pessoa ainda podem exigir conferência.
 
-## Configuração do bot
+## Modo simples
 
-1. Na VM, instale Node.js 18+ e as dependências com `npm install`.
-2. Configure as variáveis de ambiente do `.env.example` por meio do arquivo de ambiente do serviço (por exemplo, `EnvironmentFile` do systemd).
-3. Na aba `Página1`, prepare estes cabeçalhos na primeira linha: `Data/hora | Grupo | ID do grupo | Remetente | ID do remetente | Medidas | Mensagem original | ID da mensagem`.
-4. Inicie com `npm start` e escaneie o QR Code com o WhatsApp que participa do grupo.
+Com `GEMINI_CONVERSATION_ENABLED` ausente ou diferente de `true`, o modo Gemini não é usado. O código mantém o fluxo simples: tenta registrar uma mensagem individual somente quando ela própria contém `alinhamento` e os campos rotulados. Mensagens pendentes ficam para análise manual. O bot nunca responde no WhatsApp.
 
-## Hospedagem e custos
+## Google Cloud e execução
 
-O Google Cloud Free Tier inclui uma VM e2-micro não preemptiva por mês somente nas regiões elegíveis `us-west1`, `us-central1` ou `us-east1`, além de limites mensais para disco e tráfego de saída. Uso fora desses limites pode gerar cobranças. Confira a página de preços e o painel de faturamento antes de criar a VM.
+Use Node.js 18 ou superior, instale as dependências com `npm install` e configure `SPREADSHEET_ID` no ambiente do serviço. A aba deve chamar-se `Modelo alinhamento`, ter duas linhas de cabeçalho e os cadastros a partir da linha 3; o bot consulta até a linha 1000.
 
-## Comportamento e limites da V1
+Anexe à VM uma conta de serviço com acesso de Editor à planilha e use Application Default Credentials, sem chave privada JSON. A VM precisa do escopo OAuth `https://www.googleapis.com/auth/spreadsheets`; se também precisar das APIs do Cloud, mantenha `https://www.googleapis.com/auth/cloud-platform` junto. Ative a API Google Sheets no projeto.
 
-- Processa somente mensagens novas recebidas de grupos, com a palavra inteira `alinhamento`.
-- Não lê mensagens seguintes como continuação, não responde nem envia comandos.
-- Ignora mensagens antigas sincronizadas e mensagens enviadas pela própria conta.
-- Guarda os IDs recentes processados em `processed-message-ids.json`, arquivo local ignorado pelo Git.
-- A sessão WhatsApp fica em `auth_info_baileys/`, também ignorada pelo Git.
-- Para evitar duplicidade quando o processo reiniciar, mantenha os dados locais junto da hospedagem.
+Inicie `npm start` e vincule o WhatsApp pelo QR Code. A sessão WhatsApp fica em `auth_info_baileys/` e os IDs processados ficam em `processed-message-ids.json`; não compartilhe esses arquivos. `ALLOWED_GROUP_JIDS` é opcional no modo simples e, quando vazio, permite todos os grupos da conta conectada. No modo Gemini, a lista é obrigatória e deve conter somente o grupo de teste autorizado.
 
-## Segurança
+## Dados locais excluídos do Git
 
-Não crie nem publique chaves privadas de contas de serviço. Use uma conta de serviço com acesso mínimo, anexada somente à VM do bot.
+`auth_info_baileys/`, `processed-message-ids.json`, `alignment-sessions.json` e `pending-alignment.jsonl` podem conter sessão, mensagens ou outros dados operacionais. Mantenha-os protegidos na VM e fora do repositório. Nunca salve a chave Gemini no GitHub.

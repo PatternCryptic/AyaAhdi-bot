@@ -124,12 +124,19 @@ function fileStore(file) {
 
 async function geminiJson(apiKey, prompt, model = 'gemini-3.1-flash-lite') {
   if (!apiKey) throw new Error('GEMINI_API_KEY ausente');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
-  try {
-    const response = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
-      {
+
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
+    encodeURIComponent(model) + ':generateContent';
+  const timeoutMs = 50000;
+  const maxAttempts = 2;
+  let lastError;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
@@ -137,16 +144,37 @@ async function geminiJson(apiKey, prompt, model = 'gemini-3.1-flash-lite') {
           generationConfig: { responseMimeType: 'application/json', temperature: 0 }
         }),
         signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const details = (await response.text()).slice(0, 500);
+        const error = new Error('Gemini HTTP ' + response.status +
+          (details ? ': ' + details : ''));
+        error.status = response.status;
+        throw error;
       }
-    );
-    if (!response.ok) throw new Error('Gemini HTTP ' + response.status);
-    const json = await response.json();
-    const text = json.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('');
-    if (!text) throw new Error('Gemini retornou resposta vazia');
-    return JSON.parse(text);
-  } finally {
-    clearTimeout(timer);
+
+      const json = await response.json();
+      const text = json.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('');
+      if (!text) throw new Error('Gemini retornou resposta vazia');
+      return JSON.parse(text);
+    } catch (error) {
+      lastError = error.name === 'AbortError'
+        ? new Error('Tempo limite do Gemini após ' + Math.round(timeoutMs / 1000) + ' segundos')
+        : error;
+      const retryable = error.name === 'AbortError' ||
+        error.name === 'TypeError' ||
+        [408, 429, 500, 502, 503, 504].includes(error.status);
+
+      if (!retryable || attempt + 1 >= maxAttempts) throw lastError;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
   }
+
+  throw lastError;
 }
 
 function makeGeminiFunctions({ apiKey, model, onExtract }) {

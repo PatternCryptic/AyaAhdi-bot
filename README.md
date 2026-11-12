@@ -8,11 +8,11 @@ A equipe cadastra previamente a embarcação na coluna A (`Vessel`), a identific
 
 ## Modo de conversa contínua com Gemini
 
-O recurso é opt-in e fica desligado por padrão. Para ativá-lo, configure `GEMINI_CONVERSATION_ENABLED=true`, `GEMINI_API_KEY` e, opcionalmente, `GEMINI_MODEL=gemini-3.1-flash-lite`. `ALLOWED_GROUP_JIDS` é opcional: vazio permite acompanhar qualquer grupo em que o bot participe; preenchido com JIDs separados por vírgula restringe a coleta a esses grupos.
+O recurso é opt-in e fica desligado por padrão. Para ativá-lo, configure `GEMINI_CONVERSATION_ENABLED=true`, `GEMINI_API_KEY`, `GEMINI_MODEL=gemini-3.1-flash-lite` e uma lista explícita de grupos em `ALLOWED_GROUP_JIDS`. O processo recusa iniciar o modo Gemini se a chave ou a lista de grupos estiver ausente.
 
-Cada grupo tem sua própria sessão independente. Uma mensagem com a palavra inteira `alinhamento` inicia a coleta naquele grupo. O bot guarda mensagens relacionadas por até 15 minutos de inatividade. Só depois desse gatilho, enquanto aquela sessão estiver ativa, as mensagens do grupo são enviadas ao Gemini para classificação, inclusive mensagens paralelas. Conversas em outros grupos não são misturadas. Ao encerrar, o Gemini tenta extrair um registro; se detectar troca clara de equipamento, fecha o registro anterior e abre outro. Mensagens paralelas, ambiguidades e falhas de evidência não são gravadas automaticamente.
+Uma mensagem com a palavra inteira `alinhamento` inicia uma sessão naquele grupo. O bot guarda mensagens relacionadas por até 15 minutos de inatividade. O Gemini classifica as mensagens recebidas no grupo enquanto a sessão está ativa e, ao encerrar, tenta extrair um único registro. Se detectar troca clara de equipamento, fecha o registro anterior e abre outro. Mensagens paralelas, ambiguidades e falhas de evidência não são gravadas automaticamente.
 
-Sem uma lista em `ALLOWED_GROUP_JIDS`, qualquer grupo em que o bot esteja pode iniciar a coleta ao escrever `alinhamento`; o Gemini não recebe mensagens de grupos sem uma sessão ativa. Siga as regras da empresa para conteúdo de grupos corporativos. As sessões ficam em `alignment-sessions.json` com permissão restrita; itens ambíguos ou falhas ficam em `pending-alignment.jsonl`, também protegidos e fora do Git.
+Ao habilitar o modo, o texto das mensagens do grupo permitido durante a sessão é enviado ao Gemini para classificação, inclusive mensagens que depois sejam consideradas paralelas. Faça os primeiros testes somente com mensagens fictícias e não habilite em grupos corporativos até que o uso desse serviço esteja aprovado pela empresa. As sessões ficam em `alignment-sessions.json` com permissão restrita; itens ambíguos ou falhas ficam em `pending-alignment.jsonl`, também protegidos e fora do Git.
 
 O modelo não pode completar valores ausentes ou mudar unidades. Cada valor extraído precisa corresponder literalmente a uma citação de uma mensagem. A gravação só ocorre quando embarcação, equipamento e ao menos um campo de histórico têm evidência literal e o cadastro da planilha encontra uma linha única. A planilha é consultada antes da gravação; alterações simultâneas por outra pessoa ainda podem exigir conferência.
 
@@ -26,7 +26,7 @@ Use Node.js 18 ou superior, instale as dependências com `npm install` e configu
 
 Anexe à VM uma conta de serviço com acesso de Editor à planilha e use Application Default Credentials, sem chave privada JSON. A VM precisa do escopo OAuth `https://www.googleapis.com/auth/spreadsheets`; se também precisar das APIs do Cloud, mantenha `https://www.googleapis.com/auth/cloud-platform` junto. Ative a API Google Sheets no projeto.
 
-Inicie `npm start` e vincule o WhatsApp pelo QR Code. A sessão WhatsApp fica em `auth_info_baileys/` e os IDs processados ficam em `processed-message-ids.json`; não compartilhe esses arquivos. `ALLOWED_GROUP_JIDS` pode ficar vazio para permitir todos os grupos da conta conectada ou receber uma lista separada por vírgulas para restringir os grupos, tanto no modo simples quanto no Gemini.
+Inicie `npm start` e vincule o WhatsApp pelo QR Code. A sessão WhatsApp fica em `auth_info_baileys/` e os IDs processados ficam em `processed-message-ids.json`; não compartilhe esses arquivos. `ALLOWED_GROUP_JIDS` é opcional no modo simples e, quando vazio, permite todos os grupos da conta conectada. No modo Gemini, a lista é obrigatória e deve conter somente o grupo de teste autorizado.
 
 ## Dados locais excluídos do Git
 

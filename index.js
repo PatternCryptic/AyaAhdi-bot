@@ -216,7 +216,7 @@ async function handleMessage(sock, msg) {
     result = 'pendente: ' + error.message;
   }
   if (result.startsWith('pendente:')) {
-    fs.appendFileSync(path.join(__dirname, 'pending-alignment.jsonl'), JSON.stringify({ messageId, groupJid, text, reason: result }) + '\\n', { mode: 0o600 });
+    fs.appendFileSync(path.join(__dirname, 'pending-alignment.jsonl'), JSON.stringify({ messageId, groupJid, text, reason: result }) + '\n', { mode: 0o600 });
   }
   console.log('Histórico de alinhamento:', result);
   if (messageId) {

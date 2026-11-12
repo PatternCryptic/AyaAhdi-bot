@@ -4,7 +4,7 @@ const path = require('path');
 const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
 const labels = {
   'embarcacao': 'vessel', vessel: 'vessel', navio: 'vessel',
-  equipamento: 'equipment', 'equipment class': 'equipment',
+  equipamento: 'equipment', equipment: 'equipment', 'equipment class': 'equipment',
   data: 'E', motivacao: 'F', executor: 'G', metodo: 'H',
   'axial vertical': 'I', 'axial horizontal': 'J',
   'radial vertical': 'K', 'radial horizontal': 'L',

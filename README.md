@@ -4,7 +4,7 @@ Bot silencioso que pode coletar mensagens de alinhamento em grupos e preencher s
 
 ## Planilha e cadastro
 
-A equipe cadastra previamente a embarcação na coluna A (`Vessel`) e o equipamento na coluna B (`Equipment Class`). A combinação precisa identificar exatamente uma linha. O bot escreve apenas os campos de histórico nas colunas E:M; não altera o cadastro nem tolerâncias.
+A equipe cadastra previamente a embarcação na coluna A (`Vessel`), a identificação/tag do ativo na coluna B (`Equipment / Tag`) e a classe do equipamento na coluna C (`Equipment Class`). Vessel + Equipment / Tag precisa identificar exatamente uma linha. O bot localiza os campos de histórico pelos títulos da segunda linha e escreve somente esses campos; não altera o cadastro nem tolerâncias.
 
 ## Modo de conversa contínua com Gemini
 

@@ -38,7 +38,7 @@ async function loadAlignmentConfig(sheets, spreadsheetId) {
   };
   const [taxonomyRows, glossaryRows, combinationRows, masterRows] = await Promise.all(Object.values(tabs).map(read));
   const taxonomy = rowsAsObjects(taxonomyRows, ['taxonomia', 'equipment class', 'classe do equipamento']);
-  const glossary = rowsAsObjects(glossaryRows, ['glossario', 'glossary', 'termo', 'term', 'nome alternativo']);
+  const glossary = rowsAsObjects(glossaryRows, ['taxonomia', 'glossario', 'glossary', 'possiveis nomes', 'nomes possíveis', 'termo', 'term', 'nome alternativo', 'bordo']);
   const combinations = rowsAsObjects(combinationRows, ['maquina a ser alinhada / drive machine', 'drive machine', 'maquina a ser alinhada']);
   const masterlist = rowsAsObjects(masterRows, ['nome', 'vessel', 'embarcacao', 'navio']);
   if (!taxonomy.length || !glossary.length || !masterlist.length) throw new Error('Uma ou mais abas de configuração não contêm cabeçalhos/dados reconhecíveis');

@@ -82,6 +82,7 @@ if (geminiEnabled) {
     apiKey: process.env.GEMINI_API_KEY,
     model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
     config: alignmentConfigPromise,
+    getRecordSchema: () => history.getRecordSchema(sheets, spreadsheetId),
     onExtract: async (session, reason, extraction, transcript) => {
       const checked = verifyExtraction(extraction, transcript);
       if (!checked.ok) {
@@ -123,6 +124,10 @@ if (geminiEnabled) {
   });
 
   alignmentTracker = createTracker({
+    detect: async msg => {
+      try { return await gemini.detect(msg); }
+      catch { console.error('Falha ao identificar atividade com Gemini.'); return false; }
+    },
     classify: async (previous, current) => {
       try {
         return await gemini.classify(previous, current);

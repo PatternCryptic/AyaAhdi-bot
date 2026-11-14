@@ -23,6 +23,7 @@ const FIELD_LABELS = {
 
 function createTracker({
   classify,
+  detect = async msg => /\b(?:alinhamento|alignment)\b/i.test(msg.text),
   finish,
   onMessage = async () => {},
   save,
@@ -75,7 +76,7 @@ function createTracker({
 
       const session = sessions[msg.group];
       if (!session) {
-        if (!/\b(?:alinhamento|alignment)\b/i.test(msg.text)) return 'ignorada';
+        if (!await detect(msg)) return 'ignorada';
         sessions[msg.group] = newSession(msg, t);
         await onMessage(sessions[msg.group]);
         await persist();
@@ -85,8 +86,9 @@ function createTracker({
       if (msg.id && session.messages.some((item) => item.id === msg.id)) return 'duplicada';
       if (session.messages.length >= maxMessages) {
         await close(msg.group, 'limite de mensagens');
-        if (/\b(?:alinhamento|alignment)\b/i.test(msg.text)) {
+        if (await detect(msg)) {
           sessions[msg.group] = newSession(msg, t);
+          await onMessage(sessions[msg.group]);
           await persist();
           return 'aberta';
         }
@@ -186,8 +188,17 @@ async function geminiJson(apiKey, prompt, model = 'gemini-3.1-flash-lite') {
   throw lastError;
 }
 
-function makeGeminiFunctions({ apiKey, model, onExtract, config }) {
+function makeGeminiFunctions({ apiKey, model, onExtract, config, getRecordSchema = async () => ({}) }) {
   const configContext = async () => JSON.stringify(await config || {});
+  async function detect(message) {
+    const result = await geminiJson(apiKey, [
+      'Identifique se a mensagem descreve uma atividade de alinhamento de máquinas ou eixos, inclusive sem usar a palavra alinhamento.',
+      'Considere português, inglês, flexões, sinônimos e contexto técnico; não inicie coleta por conversa genérica ou ambígua.',
+      'Responda somente JSON: {"alignment":true|false}.',
+      'MENSAGEM: ' + JSON.stringify(message.text)
+    ].join('\n'), model);
+    return result?.alignment === true;
+  }
   async function classify(previousMessages, currentMessage) {
     const transcript = [...previousMessages, currentMessage].map((message, index) => ({
       n: index + 1,
@@ -197,7 +208,7 @@ function makeGeminiFunctions({ apiKey, model, onExtract, config }) {
     }));
     const result = await geminiJson(apiKey, [
       'Você classifica mensagens de um grupo de manutenção para registrar UMA atividade de alinhamento de eixo.',
-      'Analise a conversa inteira e apenas a mensagem atual. A palavra inicial alinhamento abre a coleta.',
+      'Analise a conversa inteira e classifique a mensagem atual em relação à atividade ativa.',
       'Responda somente JSON: {"decision":"related|unrelated|new_activity|uncertain"}.',
       'related: acrescenta, confirma ou corrige informação da mesma atividade/equipamento.',
       'unrelated: conversa paralela claramente sem relação com o alinhamento ativo.',
@@ -233,7 +244,8 @@ function makeGeminiFunctions({ apiKey, model, onExtract, config }) {
   async function ask(session) {
     const result = await geminiJson(apiKey, [
       'Você acompanha uma coleta de alinhamento em um grupo. Leia a conversa e a configuração online.',
-      'Determine todos os campos do formulário de registro que ainda faltam ou estão ambíguos. Considere embarcação, identificação e classe do equipamento, máquinas acopladas/estacionária, data, motivo, executor, método, tolerâncias axial/radial/Coupling GAP e medições antes/depois: Axial Vertical, Axial Horizontal, Radial Vertical, Radial Horizontal e Coupling GAP, sempre com direção e unidade.',
+      'Use os cabeçalhos reais e os campos que o registrador preenche para determinar o que falta ou está ambíguo. Identifique o grupo dos títulos repetidos. Não afirme que campos não mapeados serão preenchidos.',
+      'ESQUEMA DA PLANILHA E CAMPOS GRAVADOS: ' + JSON.stringify(await getRecordSchema()),
       'Diferencie sempre tolerância especificada de medição. Não declare aceitabilidade sem comparação correspondente.',
       'Use a configuração para reconhecer nomes canônicos. Se houver mais de uma correspondência plausível, inclua a escolha na pergunta.',
       'Retorne JSON: {"known":["campos já informados claramente"],"missing":["nomes curtos dos campos"],"question":"uma única mensagem curta pedindo de uma vez todos os campos ainda faltantes, no estilo Preciso desses dados: Embarcação, tolerância...; string vazia se nenhum"}.',
@@ -247,7 +259,7 @@ function makeGeminiFunctions({ apiKey, model, onExtract, config }) {
     return { missing, known, question };
   }
 
-  return { classify, finish, ask };
+  return { detect, classify, finish, ask };
 }
 
 function verifyExtraction(result, transcript) {

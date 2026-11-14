@@ -39,8 +39,20 @@ function makeRow(width, cols, data, sessionId) {
   return row;
 }
 
+async function getRecordSchema(sheets, spreadsheetId) {
+  const { data } = await sheets.spreadsheets.values.get({ spreadsheetId, range: "'Modelo alinhamento'!A1:ZZ2" });
+  const { groups, headers, cols } = mapHeaders(data.values || []);
+  if (!headers.length) throw new Error('Cabeçalhos da planilha de registros ausentes');
+  const populated = new Set(['vessel', 'equipment', 'date', 'motivation', 'executor', 'method', 'axial_vertical', 'axial_horizontal', 'radial_vertical', 'radial_horizontal', 'axial_tolerance', 'radial_tolerance', 'gap_tolerance', 'comments']);
+  let group = '';
+  return headers.map((title, index) => {
+    if (groups[index]) group = groups[index];
+    return { group, title, mappedAs: Object.keys(cols).filter(key => populated.has(key) && cols[key] === index) };
+  }).filter(column => column.title);
+}
+
 async function recordHistory(sheets, spreadsheetId, data, sessionId, { dryRun = false } = {}) {
-  const range = "'Modelo alinhamento'!A1:X1001";
+  const range = "'Modelo alinhamento'!A1:ZZ1001";
   const { data: result } = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   const values = result.values || [];
   const { headers, cols } = mapHeaders(values);
@@ -51,11 +63,11 @@ async function recordHistory(sheets, spreadsheetId, data, sessionId, { dryRun = 
   if (dryRun) return { status: 'validated', columns: Object.keys(cols) };
   const row = makeRow(headers.length, cols, data, sessionId);
   const { data: appended } = await sheets.spreadsheets.values.append({
-    spreadsheetId, range: "'Modelo alinhamento'!A:X", valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
+    spreadsheetId, range: "'Modelo alinhamento'!A:ZZ", valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
     requestBody: { values: [row] }
   });
   return { status: 'appended', updatedRange: appended.updates?.updatedRange };
 }
 
-module.exports = { mapHeaders, makeRow, recordHistory };
+module.exports = { mapHeaders, makeRow, getRecordSchema, recordHistory };
 

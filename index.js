@@ -1,6 +1,7 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const { google } = require('googleapis');
+google.options({ fetchImplementation: fetch });
 const fs = require('fs');
 const path = require('path');
 const P = require('pino');

@@ -10,12 +10,21 @@ const FIELD_LABELS = {
   axial_horizontal: 'Axial horizontal',
   radial_vertical: 'Radial vertical',
   radial_horizontal: 'Radial horizontal',
-  coupling_gap: 'Coupling gap'
+  coupling_gap: 'Coupling gap',
+  axial_tolerance: 'Axial tolerance',
+  radial_tolerance: 'Radial tolerance',
+  coupling_gap_tolerance: 'Coupling gap tolerance',
+  measurement_unit: 'Unidade das medições',
+  axial_vertical_before: 'Axial vertical antes do ajuste',
+  axial_horizontal_before: 'Axial horizontal antes do ajuste',
+  radial_vertical_before: 'Radial vertical antes do ajuste',
+  radial_horizontal_before: 'Radial horizontal antes do ajuste'
 };
 
 function createTracker({
   classify,
   finish,
+  onMessage = async () => {},
   save,
   load = () => ({}),
   now = Date.now,
@@ -66,8 +75,9 @@ function createTracker({
 
       const session = sessions[msg.group];
       if (!session) {
-        if (!/\balinhamento\b/i.test(msg.text)) return 'ignorada';
+        if (!/\b(?:alinhamento|alignment)\b/i.test(msg.text)) return 'ignorada';
         sessions[msg.group] = newSession(msg, t);
+        await onMessage(sessions[msg.group]);
         await persist();
         return 'aberta';
       }
@@ -75,7 +85,7 @@ function createTracker({
       if (msg.id && session.messages.some((item) => item.id === msg.id)) return 'duplicada';
       if (session.messages.length >= maxMessages) {
         await close(msg.group, 'limite de mensagens');
-        if (/\balinhamento\b/i.test(msg.text)) {
+        if (/\b(?:alinhamento|alignment)\b/i.test(msg.text)) {
           sessions[msg.group] = newSession(msg, t);
           await persist();
           return 'aberta';
@@ -94,6 +104,7 @@ function createTracker({
         session.messages.push(msg);
         if (decision === 'related') session.lastRelated = t;
       }
+      if (decision !== 'unrelated') await onMessage(sessions[msg.group]);
       await persist();
       return decision;
     }),
@@ -147,9 +158,7 @@ async function geminiJson(apiKey, prompt, model = 'gemini-3.1-flash-lite') {
       });
 
       if (!response.ok) {
-        const details = (await response.text()).slice(0, 500);
-        const error = new Error('Gemini HTTP ' + response.status +
-          (details ? ': ' + details : ''));
+        const error = new Error('Gemini HTTP ' + response.status);
         error.status = response.status;
         throw error;
       }
@@ -177,7 +186,8 @@ async function geminiJson(apiKey, prompt, model = 'gemini-3.1-flash-lite') {
   throw lastError;
 }
 
-function makeGeminiFunctions({ apiKey, model, onExtract }) {
+function makeGeminiFunctions({ apiKey, model, onExtract, config }) {
+  const configContext = async () => JSON.stringify(await config || {});
   async function classify(previousMessages, currentMessage) {
     const transcript = [...previousMessages, currentMessage].map((message, index) => ({
       n: index + 1,
@@ -208,22 +218,40 @@ function makeGeminiFunctions({ apiKey, model, onExtract }) {
     }));
     const result = await geminiJson(apiKey, [
       'Extraia um único registro de alinhamento de eixo a partir destas mensagens de um grupo de manutenção.',
-      'Responda somente JSON no formato: {"status":"ready|ambiguous|incomplete","vessel":{"value":"texto literal","message":1,"quote":"trecho literal"},"equipment":{"value":"texto literal","message":1,"quote":"trecho literal"},"fields":{"date":{"value":"texto literal","message":1,"quote":"trecho literal"},"motivation":null,"executor":null,"method":null,"axial_vertical":null,"axial_horizontal":null,"radial_vertical":null,"radial_horizontal":null,"coupling_gap":null}}.',
+      'Responda somente JSON no formato: {"status":"ready|ambiguous|incomplete","vessel":{"value":"texto literal","message":1,"quote":"trecho literal"},"equipment":{"value":"texto literal","message":1,"quote":"trecho literal"},"fields":{"date":null,"motivation":null,"executor":null,"method":null,"axial_vertical":null,"axial_horizontal":null,"radial_vertical":null,"radial_horizontal":null,"coupling_gap":null,"axial_tolerance":null,"radial_tolerance":null,"coupling_gap_tolerance":null,"measurement_unit":null,"axial_vertical_before":null,"axial_horizontal_before":null,"radial_vertical_before":null,"radial_horizontal_before":null}}.',
       'Para vessel e equipment, extraia somente se estiverem explicitamente identificados nas mensagens. equipment é o equipamento alinhado, como DG2 ou DG4; não confunda com classe genérica de equipamento.',
-      'Extraia apenas valores que as mensagens afirmam explicitamente. Não calcule, converta, complete, atribua autoria nem adivinhe dados ausentes.',
+      'Extraia apenas valores que as mensagens afirmam explicitamente. Mantenha tolerâncias separadas de medições. Registre medições após ajuste nas quatro direções apenas quando isso estiver explícito; medições anteriores ficam nos campos *_before. Não calcule, converta, complete, atribua autoria nem adivinhe dados ausentes.',
       'Cada valor não nulo precisa apontar para o número da mensagem e conter uma quote literal daquela mensagem que inclua o valor. Se houver dois equipamentos, conflito, troca incerta ou evidência insuficiente, marque ambiguous ou incomplete.',
       'Use status ready somente quando vessel, equipment e ao menos um campo de histórico estiverem claros. Use as grafias e unidades originais.',
       'MOTIVO DE FECHAMENTO: ' + reason,
+      'CONFIGURAÇÃO ONLINE (referência para identificar valores canônicos; nunca invente): ' + await configContext(),
       'MENSAGENS: ' + JSON.stringify(transcript)
     ].join('\n'), model);
     await onExtract(session, reason, result, transcript);
   }
 
-  return { classify, finish };
+  async function ask(session) {
+    const result = await geminiJson(apiKey, [
+      'Você acompanha uma coleta de alinhamento em um grupo. Leia a conversa e a configuração online.',
+      'Determine todos os campos do formulário de registro que ainda faltam ou estão ambíguos. Considere embarcação, identificação e classe do equipamento, máquinas acopladas/estacionária, data, motivo, executor, método, tolerâncias axial/radial/Coupling GAP e medições antes/depois: Axial Vertical, Axial Horizontal, Radial Vertical, Radial Horizontal e Coupling GAP, sempre com direção e unidade.',
+      'Diferencie sempre tolerância especificada de medição. Não declare aceitabilidade sem comparação correspondente.',
+      'Use a configuração para reconhecer nomes canônicos. Se houver mais de uma correspondência plausível, inclua a escolha na pergunta.',
+      'Retorne JSON: {"known":["campos já informados claramente"],"missing":["nomes curtos dos campos"],"question":"uma única mensagem curta pedindo de uma vez todos os campos ainda faltantes, no estilo Preciso desses dados: Embarcação, tolerância...; string vazia se nenhum"}.',
+      'Faça a pergunta em português ou inglês conforme o idioma mais recente do grupo. Não pergunte campos já informados claramente.',
+      'CONFIGURAÇÃO: ' + await configContext(),
+      'CONVERSA: ' + JSON.stringify(session.messages.map(m => ({sender:m.sender,text:m.text})))
+    ].join('\n'), model);
+    const missing = Array.isArray(result?.missing) ? result.missing.map(String).sort() : [];
+    const known = Array.isArray(result?.known) ? result.known.map(String).sort() : [];
+    const question = typeof result?.question === 'string' ? result.question.trim() : '';
+    return { missing, known, question };
+  }
+
+  return { classify, finish, ask };
 }
 
 function verifyExtraction(result, transcript) {
-  if (!result || result.status !== 'ready') return { ok: false, reason: 'extração incompleta ou ambígua' };
+  if (!result || !['ready', 'incomplete'].includes(result.status)) return { ok: false, reason: 'extração ambígua' };
   const verifiedValue = (item) => {
     if (!item || typeof item.value !== 'string' || !item.value.trim() ||
         !Number.isInteger(item.message) || item.message < 1 || item.message > transcript.length ||
@@ -251,3 +279,4 @@ function verifyExtraction(result, transcript) {
 }
 
 module.exports = { createTracker, fileStore, geminiJson, makeGeminiFunctions, verifyExtraction };
+

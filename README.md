@@ -1,33 +1,24 @@
-# Coletor de alinhamentos via WhatsApp
+# Coletor de alinhamentos — migração incompleta
 
-Bot silencioso que pode coletar mensagens de alinhamento em grupos e preencher somente o histórico da aba `Modelo alinhamento` no Google Sheets.
+**Não colocar em produção ainda.** O fluxo já lê a configuração via Google Sheets API, pode pedir em uma só mensagem os campos faltantes e acrescenta uma linha com chave de sessão. Ainda requer validar os cabeçalhos das abas nativas, integrar medição/tolerância no extrator e executar um ensaio com mocks antes de publicar.
 
-## Planilha e cadastro
+## Fontes e permissões
 
-A equipe cadastra previamente a embarcação na coluna A (`Vessel`), a identificação/tag do ativo na coluna B (`Equipment / Tag`) e a classe do equipamento na coluna C (`Equipment Class`). Vessel + Equipment / Tag precisa identificar exatamente uma linha. O bot localiza os campos de histórico pelos títulos da segunda linha e escreve somente esses campos; não altera o cadastro nem tolerâncias.
+- Registros: [Mr Alinhamento](https://docs.google.com/spreadsheets/d/1oc2u-thAhflrqEb3m6hxux8Yg6jEE6wGY-zFQyBRR38/edit), aba `Modelo alinhamento`. Seu ID deve ser definido em `SPREADSHEET_ID`.
+- Configuração nativa: [Configuração - alinhamento](https://docs.google.com/spreadsheets/d/1E27LdQunE0QVAAT7pnEo0GOvORov090ioIshE3jLCuY/edit), com `Taxonomia`, `Glossario`, `Configurações` e `masterlist`. Configure esse ID em `CONFIG_SPREADSHEET_ID`. A conta `bot-whatsapp-sheets@project-38a010b6-380d-436b-8a3.iam.gserviceaccount.com` recebeu acesso de leitor; ela permanece editora da planilha de registros.
+- Mantenha configuração e registros em arquivos separados: as permissões do Google Sheets são por arquivo, então um único arquivo não permite restringir a conta de serviço à leitura de algumas abas e escrita em outra. Use ADC com a conta anexada à VM, sem chaves no repositório. `GEMINI_API_KEY` deve vir de variável de ambiente ou gerenciador de segredos.
 
-## Modo de conversa contínua com Gemini
+## Esquema inspecionado
 
-O recurso é opt-in e fica desligado por padrão. Para ativá-lo, configure `GEMINI_CONVERSATION_ENABLED=true` e `GEMINI_API_KEY`; `GEMINI_MODEL=gemini-3.1-flash-lite` é opcional. `ALLOWED_GROUP_JIDS` também é opcional: vazio permite todos os grupos em que o bot participa; uma lista de JIDs separada por vírgulas restringe a coleta a esses grupos.
+Os títulos ficam na segunda linha, sob agrupamentos na primeira. Há títulos repetidos `Equipment Class`, `Maker` e `Model` para a máquina de acionamento e a estacionária; o mapeamento seleciona o grupo `Drive Machine` e falha diante de cabeçalhos essenciais ambíguos. Há quatro colunas direcionais de histórico e tolerâncias axial, radial e de folga, mas não há colunas distintas para antes/depois, unidade ou conclusão. O gravador acrescenta linhas e usa `Comments` para observações e a chave idempotente da sessão. A pergunta única é refeita quando a lista de campos faltantes muda.
 
-Cada grupo mantém uma sessão independente. Uma mensagem com a palavra inteira `alinhamento` inicia a coleta naquele grupo. O bot guarda mensagens relacionadas por até 15 minutos de inatividade. Só depois desse gatilho, enquanto a sessão daquele grupo estiver ativa, as mensagens desse grupo são enviadas ao Gemini para classificação, inclusive mensagens paralelas. Conversas de outros grupos não são misturadas. Ao encerrar, o Gemini tenta extrair um único registro. Se detectar troca clara de equipamento, fecha o registro anterior e abre outro. Mensagens paralelas, ambiguidades e falhas de evidência não são gravadas automaticamente.
+## Fluxo atual e pendências
 
-Com `ALLOWED_GROUP_JIDS` vazio, qualquer grupo em que o bot participe pode iniciar uma coleta ao escrever `alinhamento`; mensagens de grupos sem uma sessão ativa não são enviadas ao Gemini. As sessões ficam em `alignment-sessions.json` com permissão restrita; itens ambíguos ou falhas ficam em `pending-alignment.jsonl`, também protegidos e fora do Git.
+Baileys recebe mensagens de todos os grupos; Gemini classifica sessões separadas por grupo, faz uma pergunta consolidada e reavalia o que falta após cada resposta. A pergunta seguinte só é enviada quando o conjunto de campos conhecidos/faltantes muda. A sessão fecha após 15 minutos sem atividade relacionada e os campos comprovados podem ser gravados mesmo se outros continuarem desconhecidos. Antes de publicar, validar os nomes de cabeçalho das abas na cópia nativa. Não utilizar a planilha real para testes.
 
-O modelo não pode completar valores ausentes ou mudar unidades. Cada valor extraído precisa corresponder literalmente a uma citação de uma mensagem. A gravação só ocorre quando embarcação, equipamento e ao menos um campo de histórico têm evidência literal e o cadastro da planilha encontra uma linha única. A planilha é consultada antes da gravação; alterações simultâneas por outra pessoa ainda podem exigir conferência.
+`alignment_measurements.compare` só compara medição posterior e tolerância numéricas com mesma direção e unidade explícitas. Ela retorna `Desconhecido` nos demais casos; ainda precisa ser ligada à extração com evidências verificadas.
 
-## Modo simples
+## Testes
 
-Com `GEMINI_CONVERSATION_ENABLED` ausente ou diferente de `true`, o modo Gemini não é usado. O código mantém o fluxo simples: tenta registrar uma mensagem individual somente quando ela própria contém `alinhamento` e os campos rotulados. Mensagens pendentes ficam para análise manual. O bot nunca responde no WhatsApp.
+Execute `npm test` com Node.js compatível com `node:test`. Não é necessário conectar WhatsApp ou Google para os testes locais. Os arquivos de sessão e pendências podem conter dados pessoais e devem permanecer privados e fora do Git. Outros guias anteriores descrevem o comportamento antigo e não devem ser usados para implantação.
 
-## Google Cloud e execução
-
-Use Node.js 18 ou superior, instale as dependências com `npm install` e configure `SPREADSHEET_ID` no ambiente do serviço. A aba deve chamar-se `Modelo alinhamento`, ter duas linhas de cabeçalho e os cadastros a partir da linha 3; o bot consulta até a linha 1000.
-
-Anexe à VM uma conta de serviço com acesso de Editor à planilha e use Application Default Credentials, sem chave privada JSON. A VM precisa do escopo OAuth `https://www.googleapis.com/auth/spreadsheets`; se também precisar das APIs do Cloud, mantenha `https://www.googleapis.com/auth/cloud-platform` junto. Ative a API Google Sheets no projeto.
-
-Inicie `npm start` e vincule o WhatsApp pelo QR Code. A sessão WhatsApp fica em `auth_info_baileys/` e os IDs processados ficam em `processed-message-ids.json`; não compartilhe esses arquivos. `ALLOWED_GROUP_JIDS` pode ficar vazio para permitir todos os grupos da conta conectada ou receber uma lista separada por vírgulas para restringir os grupos, tanto no modo simples quanto no Gemini.
-
-## Dados locais excluídos do Git
-
-`auth_info_baileys/`, `processed-message-ids.json`, `alignment-sessions.json` e `pending-alignment.jsonl` podem conter sessão, mensagens ou outros dados operacionais. Mantenha-os protegidos na VM e fora do repositório. Nunca salve a chave Gemini no GitHub.

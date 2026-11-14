@@ -6,11 +6,6 @@ const path = require('path');
 const P = require('pino');
 
 const spreadsheetId = process.env.SPREADSHEET_ID;
-const sheetRange = process.env.SHEETS_RANGE || 'Página1!A:H';
-const allowedGroups = (process.env.ALLOWED_GROUP_JIDS || '')
-  .split(',')
-  .map((jid) => jid.trim())
-  .filter(Boolean);
 const geminiEnabled = process.env.GEMINI_CONVERSATION_ENABLED === 'true';
 
 if (!spreadsheetId) {
@@ -19,10 +14,11 @@ if (!spreadsheetId) {
 if (geminiEnabled && !process.env.GEMINI_API_KEY) {
   throw new Error('GEMINI_CONVERSATION_ENABLED requer GEMINI_API_KEY.');
 }
+if (geminiEnabled && !process.env.CONFIG_SPREADSHEET_ID) {
+  throw new Error('GEMINI_CONVERSATION_ENABLED requer CONFIG_SPREADSHEET_ID.');
+}
 if (geminiEnabled) {
-  console.log(allowedGroups.length
-    ? `Gemini ativo para ${allowedGroups.length} grupo(s) autorizado(s).`
-    : 'Gemini ativo em todos os grupos dos quais o bot participa; a coleta começa com a palavra "alinhamento".');
+  console.log('Gemini ativo em todos os grupos dos quais o bot participa; sessões isoladas por grupo.');
 }
 
 // ADC uses the VM's attached service account on Compute Engine.
@@ -74,13 +70,18 @@ function getMessageText(message) {
 }
 
 let alignmentTracker = null;
+let activeSock = null;
+let alignmentConfigPromise = null;
 if (geminiEnabled) {
   const { createTracker, fileStore, makeGeminiFunctions, verifyExtraction } = require('./gemini_conversation');
+  const { loadAlignmentConfig } = require('./alignment_config');
   const history = require('./alignment_history');
   const store = fileStore(sessionsFile);
+  alignmentConfigPromise = loadAlignmentConfig(sheets, process.env.CONFIG_SPREADSHEET_ID);
   const gemini = makeGeminiFunctions({
     apiKey: process.env.GEMINI_API_KEY,
     model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
+    config: alignmentConfigPromise,
     onExtract: async (session, reason, extraction, transcript) => {
       const checked = verifyExtraction(extraction, transcript);
       if (!checked.ok) {
@@ -95,8 +96,20 @@ if (geminiEnabled) {
         return;
       }
 
-      const result = await history.recordHistory(auth, spreadsheetId, checked.text);
-      if (result.startsWith('pendente:')) {
+      const crypto = require('crypto');
+      const sessionId = crypto.createHash('sha256').update(`${session.group}|${session.startedAt}`).digest('hex').slice(0, 24);
+      const fields = checked.fields || {};
+      const result = await history.recordHistory(sheets, spreadsheetId, {
+        vessel: checked.vessel, equipment: checked.equipment,
+        date: fields.Data, motivation: fields.Motivacao, executor: fields.Executor, method: fields.Metodo,
+        axial_vertical: fields['Axial vertical'], axial_horizontal: fields['Axial horizontal'],
+        radial_vertical: fields['Radial vertical'], radial_horizontal: fields['Radial horizontal'],
+        axial_tolerance: fields['Axial tolerance'], radial_tolerance: fields['Radial tolerance'],
+        gap_tolerance: fields['Coupling gap tolerance'],
+        observations: Object.entries(fields).filter(([key]) => /antes do ajuste|unidade das medições|Coupling gap/i.test(key))
+          .map(([key, value]) => `${key}: ${value}`).join('; ')
+      }, sessionId);
+      if (result.status !== 'appended' && result.status !== 'duplicate') {
         appendPending({
           groupJid: session.group,
           startedAt: session.startedAt,
@@ -105,7 +118,7 @@ if (geminiEnabled) {
           messages: session.messages
         });
       }
-      console.log('Histórico de alinhamento:', result);
+      console.log('Registro de alinhamento:', result.status);
     }
   });
 
@@ -114,8 +127,20 @@ if (geminiEnabled) {
       try {
         return await gemini.classify(previous, current);
       } catch (error) {
-        console.error('Falha de classificação Gemini; mantendo mensagem pendente:', error.message);
+    console.error('Falha de classificação Gemini; mantendo mensagem pendente.');
         return 'uncertain';
+      }
+    },
+    onMessage: async (session) => {
+      if (!activeSock) return;
+      const review = await gemini.ask(session);
+      const signature = `${review.missing.join('|')}#${review.known.join('|')}`;
+      if (!signature || !review.question || signature === session.lastAskedSignature) return;
+      try {
+        await activeSock.sendMessage(session.group, { text: review.question });
+        session.lastAskedSignature = signature;
+      } catch {
+        console.error('Não foi possível enviar a pergunta da sessão.');
       }
     },
     finish: async (session, reason) => {
@@ -126,10 +151,10 @@ if (geminiEnabled) {
           groupJid: session.group,
           startedAt: session.startedAt,
           closedAt: new Date().toISOString(),
-          reason: 'falha ao finalizar com Gemini: ' + error.message,
+          reason: 'falha ao finalizar com Gemini',
           messages: session.messages
         });
-        console.error('Sessão salva para revisão após falha do Gemini:', error.message);
+        console.error('Sessão salva para revisão após falha do Gemini.');
       }
     },
     save: (state) => store.save(state),
@@ -144,45 +169,9 @@ if (geminiEnabled) {
   }, 30 * 1000).unref();
 }
 
-function findMeasurements(text) {
-  // Registra somente medidas explicitamente escritas com unidade; não deduz valores.
-  return [...text.matchAll(/\b-?\d+(?:[.,]\d+)?\s*(?:mm|milímetros?|cm|centímetros?|µm|μm|micrômetros?)\b/gi)]
-    .map((match) => match[0].trim())
-    .join('; ');
-}
-
-async function appendAlignment(sock, msg, text) {
-  const groupJid = msg.key.remoteJid;
-  const senderJid = msg.key.participant || '';
-  const timestamp = msg.messageTimestamp
-    ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
-    : new Date().toISOString();
-  let groupName = '';
-  try {
-    groupName = (await sock.groupMetadata(groupJid)).subject || '';
-  } catch {
-    // O ID do grupo continua sendo registrado caso os metadados não estejam disponíveis.
-  }
-  const messageId = msg.key.id || '';
-
-  const client = await auth.getClient();
-  const accessToken = await client.getAccessToken();
-  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId) + '/values/' + encodeURIComponent(sheetRange) + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + accessToken.token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ values: [[timestamp, groupName, groupJid, msg.pushName || '', senderJid, findMeasurements(text), text, messageId]] })
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error('Sheets HTTP ' + response.status + ': ' + body.slice(0, 300));
-  }
-}
-
 async function handleMessage(sock, msg) {
   const groupJid = msg.key.remoteJid || '';
   if (!groupJid.endsWith('@g.us') || msg.key.fromMe) return;
-  if (allowedGroups.length && !allowedGroups.includes(groupJid)) return;
 
   const text = getMessageText(msg.message).trim();
   if (!text) return;
@@ -209,26 +198,14 @@ async function handleMessage(sock, msg) {
     return;
   }
 
-  if (!/\balinhamento\b/i.test(text)) return;
-
-  let result;
-  try {
-    result = await require('./alignment_history').recordHistory(auth, spreadsheetId, text);
-  } catch (error) {
-    result = 'pendente: ' + error.message;
+  if (/\b(?:alinhamento|alignment)\b/i.test(text)) {
+    appendPending({ messageId, groupJid, text, reason: 'modo Gemini desativado; coleta conversacional indisponível' });
+    console.log('Mensagem de alinhamento colocada para revisão; Gemini está desativado.');
   }
-  if (result.startsWith('pendente:')) {
-    fs.appendFileSync(path.join(__dirname, 'pending-alignment.jsonl'), JSON.stringify({ messageId, groupJid, text, reason: result }) + '\n', { mode: 0o600 });
-  }
-  console.log('Histórico de alinhamento:', result);
-  if (messageId) {
-    seenIds.add(messageId);
-    saveSeenIds();
-  }
-  console.log('Mensagem de alinhamento registrada:', groupJid, messageId || '(sem ID)');
 }
 
 async function startBot() {
+  if (geminiEnabled) await alignmentConfigPromise;
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
   const sock = makeWASocket({
     auth: state,
@@ -236,6 +213,7 @@ async function startBot() {
     browser: ['Alignment Collector', 'Chrome', '1.0.0'],
     syncFullHistory: false
   });
+  activeSock = sock;
 
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
@@ -243,7 +221,9 @@ async function startBot() {
       console.log('Escaneie o QR Code com o WhatsApp que ficará conectado ao grupo:');
       qrcode.generate(qr, { small: true });
     }
-    if (connection === 'open') console.log('Coletor conectado. Ele não envia mensagens.');
+    if (connection === 'open') console.log(geminiEnabled
+      ? 'Coletor conectado; perguntas de alinhamento estão ativas.'
+      : 'Coletor conectado em modo silencioso.');
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) setTimeout(startBot, 3000);
@@ -272,3 +252,4 @@ startBot().catch((error) => {
   console.error('Não foi possível iniciar o coletor:', error.message);
   process.exit(1);
 });
+

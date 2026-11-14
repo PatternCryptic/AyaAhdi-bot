@@ -1,42 +1,21 @@
-# Início rápido — Coletor de alinhamentos
+# Início rápido — Bot de alinhamentos
 
-## O caminho que vamos usar
+Este serviço usa uma VM do Compute Engine e autenticação ADC. Não armazene chave de conta de serviço no repositório.
 
-A conta de serviço já existe e foi compartilhada com a planilha. O bot será executado em uma VM do Compute Engine com essa conta anexada. Assim, o Google fornece credenciais temporárias e não precisamos baixar uma chave JSON.
+## Planilhas
 
-## 1. Preparar a planilha
+- Registros (`SPREADSHEET_ID`): `1oc2u-thAhflrqEb3m6hxux8Yg6jEE6wGY-zFQyBRR38`, aba `Modelo alinhamento`.
+- Configuração (`CONFIG_SPREADSHEET_ID`): `1E27LdQunE0QVAAT7pnEo0GOvORov090ioIshE3jLCuY`, abas `Taxonomia`, `Glossario`, `Configurações` e `masterlist`.
 
-Na aba configurada, use estes cabeçalhos na primeira linha:
+A conta `bot-whatsapp-sheets` precisa ser leitora da configuração e editora dos registros. Mantenha os arquivos separados porque as permissões são por arquivo.
 
-`Data/hora | Grupo | ID do grupo | Remetente | ID do remetente | Medidas | Mensagem original | ID da mensagem`
+## Ambiente
 
-A conta de serviço `bot-whatsapp-sheets` precisa ter acesso de Editor à planilha.
+Configure `SPREADSHEET_ID`, `CONFIG_SPREADSHEET_ID`, `GEMINI_CONVERSATION_ENABLED=true` e `GEMINI_API_KEY` por variáveis de ambiente/segredos do serviço. Opcionalmente escolha `GEMINI_MODEL`; o padrão é `gemini-3.1-flash-lite`. A VM deve usar a conta de serviço anexada por ADC.
 
-## 2. Criar a VM (faremos juntos no Console)
+Instale dependências com `npm install`, valide com `npm test` e inicie com `npm start`. Quando ativo, o bot acompanha sessões separadas em todos os grupos de que participa, pergunta em uma única mensagem os campos que faltam, atualiza a pergunta após respostas e fecha a sessão após 15 minutos sem resposta relacionada.
 
-Para tentar permanecer dentro do Free Tier, a documentação do Google lista uma VM e2-micro não preemptiva nas regiões `us-west1`, `us-central1` ou `us-east1`, com limites mensais de disco e tráfego. Não crie em outra região nem adicione recursos pagos sem conferir o custo estimado.
+Antes de ativar uma nova versão, confira os cabeçalhos da aba `Modelo alinhamento`. O bot acrescenta linhas; a chave de sessão fica em `Comments` para evitar duplicatas. O conteúdo de `Comments` também preserva observações que não tenham coluna própria.
 
-Na criação da VM, vamos anexar a conta `bot-whatsapp-sheets` e habilitar o escopo `cloud-platform`. Não alteraremos a política que bloqueia chaves privadas.
+Mantenha `auth_info_baileys/`, `alignment-sessions.json`, `pending-alignment.jsonl` e `processed-message-ids.json` privados e fora do Git.
 
-## 3. Instalar e configurar o bot
-
-Na VM:
-
-1. Instale Node.js 18+.
-2. Clone o repositório e entre na pasta.
-3. Rode `npm install`.
-4. Configure `SPREADSHEET_ID`, `SHEETS_RANGE` e, se quiser, `ALLOWED_GROUP_JIDS` como variáveis de ambiente do serviço.
-5. Rode `npm start` e escaneie o QR Code com a conta WhatsApp que participa do grupo.
-
-O serviço deve ser configurado para iniciar novamente após reinicialização da VM. A sessão WhatsApp fica em `auth_info_baileys/`; mantenha essa pasta no disco persistente.
-
-## O que o bot faz
-
-- Registra somente mensagens novas de grupo que contenham a palavra inteira `alinhamento`.
-- Não responde nem inclui mensagens enviadas depois que não contenham a palavra.
-- Guarda o texto original e medidas que estiverem explicitamente escritas.
-- Não cria chave privada de conta de serviço.
-
-## Custos
-
-O Free Tier tem limites. Disco, tráfego ou configurações fora deles podem gerar cobrança. Antes de criar a VM, confira a estimativa no Console e o painel de faturamento.
